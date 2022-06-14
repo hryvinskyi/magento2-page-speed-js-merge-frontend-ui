@@ -1,0 +1,21 @@
+<?php
+/**
+ * Copyright (c) 2022. All rights reserved.
+ * @author: Volodymyr Hryvinskyi <mailto:volodymyr@hryvinskyi.com>
+ */
+
+/**
+ * @var $block \Hryvinskyi\PageSpeedJsMergeFrontendUi\Block\RequireJsDataCollector
+ */
+?>
+<script type="text/javascript" <?php echo $block->getScriptDataKey();?>="<?php echo $block->getRouteKey();?>" data-pagespeed-ignore-merge>
+    require(['Hryvinskyi_PageSpeedJsMergeFrontendUi/js/require-js-data-collector'], function (dataCollector) {
+        dataCollector.init(
+            <?php echo \Zend_Json::encode($block->getRouteKey());?>,
+            <?php echo \Zend_Json::encode($block->getRequestUrl());?>,
+            <?php echo \Zend_Json::encode($block->getPageCacheTags());?>,
+            <?php echo \Zend_Json::encode($block->getIgnore());?>
+        );
+        dataCollector.run();
+    });
+</script>

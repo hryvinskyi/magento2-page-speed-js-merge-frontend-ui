@@ -1,0 +1,30 @@
+{
+  "name": "hryvinskyi/magento2-page-speed-js-merge-frontend-ui",
+  "version": "1.0.0",
+  "description": "N/A",
+  "type": "magento2-module",
+  "require": {
+    "magento/framework": "*",
+    "hryvinskyi/magento2-page-speed-js-merge": "1.0.*"
+  },
+  "require-dev": {
+    "roave/security-advisories": "dev-latest"
+  },
+  "authors": [
+    {
+      "name": "Volodymyr Hryvinskyi",
+      "email": "volodymyr@hryvinskyi.com"
+    }
+  ],
+  "license": [
+    "Proprietary"
+  ],
+  "autoload": {
+    "files": [
+      "registration.php"
+    ],
+    "psr-4": {
+      "Hryvinskyi\\PageSpeedJsMergeFrontendUi\\": ""
+    }
+  }
+}
