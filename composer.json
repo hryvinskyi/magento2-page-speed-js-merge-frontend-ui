@@ -1,6 +1,6 @@
 {
   "name": "hryvinskyi/magento2-page-speed-js-merge-frontend-ui",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "N/A",
   "type": "magento2-module",
   "require": {

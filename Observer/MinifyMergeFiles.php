@@ -24,12 +24,13 @@ class MinifyMergeFiles implements ObserverInterface
         try {
             $extension = pathinfo($data->getFile(), PATHINFO_EXTENSION);
             if ($extension === 'html') {
-//                $content = preg_replace('!\s+!', ' ', $content);
+                $content = preg_replace('!\s+!', ' ', $content);
             }
             if ($extension === 'js') {
-//                $content = Minifier::minify($data->getContent());
+                $content = Minifier::minify($data->getContent());
             }
         } catch (\Throwable $exception) {
+            $content = $data->getContent();
         }
 
         $data->setContent($content);
