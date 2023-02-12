@@ -8,7 +8,7 @@
  * @var $block \Hryvinskyi\PageSpeedJsMergeFrontendUi\Block\RequireJsDataCollector
  */
 ?>
-<script type="text/javascript" <?php echo $block->getScriptDataKey();?>="<?php echo $block->getRouteKey();?>" data-pagespeed-ignore-merge>
+<script type="text/javascript" <?php echo $block->getScriptDataKey();?>="<?php echo $block->getRouteKey();?>" data-ignore-extreme-lazy-load data-pagespeed-ignore-merge>
     require(['Hryvinskyi_PageSpeedJsMergeFrontendUi/js/require-js-data-collector'], function (dataCollector) {
         dataCollector.init(
             <?php echo \Zend_Json::encode($block->getRouteKey());?>,
