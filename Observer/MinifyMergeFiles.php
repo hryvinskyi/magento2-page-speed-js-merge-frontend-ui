@@ -70,7 +70,11 @@ class MinifyMergeFiles implements ObserverInterface
         try {
             $minifier = new Minify\JS();
             $minifier->add($content);
-            $content = $minifier->minify();
+            $minifiedContent = $minifier->minify();
+
+            if (trim($content) !== '' && trim($minifiedContent) === '') {
+                return $content;
+            }
         } catch (\Throwable $exception) {
             // If minification fails, return the original content
         }
