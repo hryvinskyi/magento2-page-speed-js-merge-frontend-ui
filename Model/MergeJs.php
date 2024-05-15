@@ -187,6 +187,28 @@ class MergeJs implements MergeJsInterface
             if (preg_match('/<[^>]+?>/is', $betweenText) === 1) {
                 $isNeedNewGroup = true;
             }
+
+            $previousAttributes = $previousTag->getAttributes();
+            $currentAttributes = $currentTag->getAttributes();
+
+            if (array_key_exists('src', $previousAttributes)) {
+                if (preg_match('/requirejs-config.js$/', $previousAttributes['src']) === 1) {
+                    $isNeedNewGroup = true;
+                }
+            }
+
+            if (array_key_exists('src', $currentAttributes)) {
+                if (preg_match('/' . CacheInterface::MAIN_FOLDER . '\/requirejs\/[a-f0-9]{32}\.js$/', $previousAttributes['src']) === 1) {
+                    $isNeedNewGroup = true;
+                }
+            }
+
+            if (array_key_exists('src', $currentAttributes)) {
+                if (preg_match('/requirejs\/require.js$/', $previousAttributes['src']) === 1) {
+                    $isNeedNewGroup = true;
+                }
+            }
+
             $isCurrentTagMustBeIgnored = $this->isTagMustBeIgnored->execute(
                 $currentTag->getContent(),
                 $this->ignoreMergeFlagList,
@@ -202,14 +224,12 @@ class MergeJs implements MergeJsInterface
                 $isNeedNewGroup = true;
             }
 
-            $previousAttributes = $previousTag->getAttributes();
             if (array_key_exists('src', $previousAttributes)) {
                 if (!$this->isInternalUrl->execute($previousAttributes['src'])
                     || !file_exists($this->getLocalPathFromUrl->execute($previousAttributes['src']))) {
                     $isNeedNewGroup = true;
                 }
             }
-            $currentAttributes = $currentTag->getAttributes();
             if (array_key_exists('src', $currentAttributes)) {
                 if (!$this->isInternalUrl->execute($currentAttributes['src'])
                     || !file_exists($this->getLocalPathFromUrl->execute($currentAttributes['src']))) {
