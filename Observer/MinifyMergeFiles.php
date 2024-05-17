@@ -32,11 +32,11 @@ class MinifyMergeFiles implements ObserverInterface
         $content = $data->getContent();
         $file = $data->getFile();
 
-        if ($this->isMinifiableHtml($file)) {
+        if ($this->isMinimizableHtml($file)) {
             $content = $this->minifyHtmlContent($content);
         }
 
-        if ($this->isMinifiableJs($file)) {
+        if ($this->isMinimizableJs($file)) {
             $content = $this->minifyJsContent($content);
         }
 
@@ -44,12 +44,12 @@ class MinifyMergeFiles implements ObserverInterface
     }
 
     /**
-     * Check if js file is minifiable
+     * Check if js file is minimizable
      *
      * @param string $file
      * @return bool
      */
-    private function isMinifiableJs(string $file): bool
+    private function isMinimizableJs(string $file): bool
     {
         $extension = pathinfo($file, PATHINFO_EXTENSION);
         $isExtensionJs = $extension === 'js';
@@ -88,7 +88,7 @@ class MinifyMergeFiles implements ObserverInterface
      * @param string $file
      * @return bool
      */
-    private function isMinifiableHtml(string $file): bool
+    private function isMinimizableHtml(string $file): bool
     {
         $extension = pathinfo($file, PATHINFO_EXTENSION);
 
