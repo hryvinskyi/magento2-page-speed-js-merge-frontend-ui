@@ -31,9 +31,8 @@ use Hryvinskyi\PageSpeedApi\Api\Finder\Result\RawInterface;
 
 class MergeJs implements MergeJsInterface
 {
-    private array $ignoreMergeFlagList = [
-        self::FLAG_IGNORE_MERGE
-    ];
+    private const IGNORE_MERGE_FLAG = 'ignore_merge';
+
     private ConfigInterface $config;
     private CacheInterface $cache;
     private ResponseInterface $response;
@@ -115,33 +114,33 @@ class MergeJs implements MergeJsInterface
     public function inline(string &$html): void
     {
         $tagList = $this->jsFinder->findExternal($html);
-        $this->excludeIgnoreTagFromList($tagList, $this->ignoreMergeFlagList);
-        if (count($tagList) === 0) {
+        $this->excludeIgnoredTags($tagList);
+        if (empty($tagList)) {
             return;
         }
 
         $replaceData = [];
         foreach ($tagList as $tag) {
-            /** @var TagInterface $tag */
             $attributes = $tag->getAttributes();
             if (!$this->isInternalUrl->execute($attributes['src'])) {
                 continue;
             }
-            $inlineMaxLength = $this->config->getInlineMaxLength();
+
             $contentLength = $this->getStringLengthFromUrl->execute($attributes['src']);
-            if ($contentLength > $inlineMaxLength) {
-                continue;
-            }
-            $content = $this->getFileContentByUrl->execute($attributes['src']);
-            if ($content === '' || strlen($content) > $inlineMaxLength) {
+            if ($contentLength > $this->config->getInlineMaxLength()) {
                 continue;
             }
 
-            $replaceData[] = array(
+            $content = $this->getFileContentByUrl->execute($attributes['src']);
+            if ($content === '' || strlen($content) > $this->config->getInlineMaxLength()) {
+                continue;
+            }
+
+            $replaceData[] = [
                 'start' => $tag->getStart(),
                 'end' => $tag->getEnd(),
                 'content' => '<script type="text/javascript">' . $content . '</script>'
-            );
+            ];
         }
 
         foreach (array_reverse($replaceData) as $replaceElData) {
@@ -160,111 +159,34 @@ class MergeJs implements MergeJsInterface
     public function merge(string &$html): void
     {
         $this->insertRequireJsFiles($html);
-        if ($this->config->isMergeInlineJsEnabled()) {
-            $tagList = $this->jsFinder->findAll($html);
-        } else {
-            $tagList = $this->jsFinder->findExternal($html);
-        }
+        $tagList = $this->config->isMergeInlineJsEnabled()
+            ? $this->jsFinder->findAll($html)
+            : $this->jsFinder->findExternal($html);
 
-        if (count($tagList) === 0) {
+        if (empty($tagList)) {
             return;
         }
 
-        /** @var TagInterface $firstTag */
-        $firstTag = reset($tagList);
-        $groupList = [$firstTag->getStart() => [$firstTag]];
-        for ($i = 1, $iMax = count($tagList); $i < $iMax; $i++) {
-            /** @var TagInterface $previousTag */
-            /** @var TagInterface $currentTag */
-            $previousTag = $tagList[$i - 1];
-            $currentTag = $tagList[$i];
-            $isNeedNewGroup = false;
-            $betweenText = $this->getStringFromHtml->execute(
-                $html,
-                $previousTag->getEnd() + 1,
-                $currentTag->getStart()
-            );
-            if (preg_match('/<[^>]+?>/is', $betweenText) === 1) {
-                $isNeedNewGroup = true;
-            }
-
-            $previousAttributes = $previousTag->getAttributes();
-            $currentAttributes = $currentTag->getAttributes();
-
-            if (array_key_exists('src', $previousAttributes)) {
-                if (preg_match('/requirejs-config.js$/', $previousAttributes['src']) === 1) {
-                    $isNeedNewGroup = true;
-                }
-            }
-
-            if (array_key_exists('src', $currentAttributes)) {
-                if (preg_match('/' . CacheInterface::MAIN_FOLDER . '\/requirejs\/[a-f0-9]{32}\.js$/', $previousAttributes['src']) === 1) {
-                    $isNeedNewGroup = true;
-                }
-            }
-
-            if (array_key_exists('src', $currentAttributes)) {
-                if (preg_match('/requirejs\/require.js$/', $previousAttributes['src']) === 1) {
-                    $isNeedNewGroup = true;
-                }
-            }
-
-            $isCurrentTagMustBeIgnored = $this->isTagMustBeIgnored->execute(
-                $currentTag->getContent(),
-                $this->ignoreMergeFlagList,
-                $this->config->getExcludeAnchors()
-            );
-            $isPreviousTagMustBeIgnored = $this->isTagMustBeIgnored->execute(
-                $previousTag->getContent(),
-                $this->ignoreMergeFlagList,
-                $this->config->getExcludeAnchors()
-            );
-
-            if ($isPreviousTagMustBeIgnored || $isCurrentTagMustBeIgnored) {
-                $isNeedNewGroup = true;
-            }
-
-            if (array_key_exists('src', $previousAttributes)) {
-                if (!$this->isInternalUrl->execute($previousAttributes['src'])
-                    || !file_exists($this->getLocalPathFromUrl->execute($previousAttributes['src']))) {
-                    $isNeedNewGroup = true;
-                }
-            }
-            if (array_key_exists('src', $currentAttributes)) {
-                if (!$this->isInternalUrl->execute($currentAttributes['src'])
-                    || !file_exists($this->getLocalPathFromUrl->execute($currentAttributes['src']))) {
-                    $isNeedNewGroup = true;
-                }
-            }
-            if ($isNeedNewGroup) {
-                $groupList[$currentTag->getStart()] = array($currentTag);
-                next($groupList);
-                continue;
-            }
-            $groupList[key($groupList)][] = $currentTag;
-        }
+        $groupList = $this->groupTags($tagList, $html);
 
         $replaceData = [];
-
         foreach ($groupList as $group) {
             if (count($group) < 2) {
                 continue;
             }
-            $mergedUrl = $this->jsMerger->merge($group);
 
+            $mergedUrl = $this->jsMerger->merge($group);
             if ($mergedUrl === null) {
                 continue;
             }
 
-            /** @var RawInterface $firstTag */
-            /** @var RawInterface $lastTag */
             $firstTag = reset($group);
             $lastTag = end($group);
-            $replaceData[] = array(
+            $replaceData[] = [
                 'start' => $firstTag->getStart(),
                 'end' => $lastTag->getEnd(),
                 'url' => $mergedUrl
-            );
+            ];
         }
 
         foreach (array_reverse($replaceData) as $replaceElData) {
@@ -279,66 +201,196 @@ class MergeJs implements MergeJsInterface
     }
 
     /**
-     * @param array $tagList
-     * @param array $ignoreFlagList
+     * Exclude ignored tags
      *
-     * @return $this
+     * @param array $tagList
+     * @return void
      */
-    private function excludeIgnoreTagFromList(array &$tagList, array $ignoreFlagList): void
+    private function excludeIgnoredTags(array &$tagList): void
     {
         foreach ($tagList as $key => $tag) {
-            /** @var TagInterface $tag */
-            $isTagMustBeIgnored = $this->isTagMustBeIgnored->execute(
+            if ($this->isTagMustBeIgnored->execute(
                 $tag->getContent(),
-                $ignoreFlagList,
+                [self::IGNORE_MERGE_FLAG],
                 $this->config->getExcludeAnchors()
-            );
-
-            if ($isTagMustBeIgnored) {
+            )) {
                 unset($tagList[$key]);
             }
         }
     }
 
     /**
+     * Group tags
+     *
+     * @param array $tagList Tag list
+     * @param string $html HTML content
+     * @return array[]
+     */
+    private function groupTags(array $tagList, string $html): array
+    {
+        $firstTag = reset($tagList);
+        $groupList = [$firstTag->getStart() => [$firstTag]];
+
+        for ($i = 1, $iMax = count($tagList); $i < $iMax; $i++) {
+            $previousTag = $tagList[$i - 1];
+            $currentTag = $tagList[$i];
+            $isNeedNewGroup = $this->isNewGroupNeeded($previousTag, $currentTag, $html);
+
+            if ($isNeedNewGroup) {
+                $groupList[$currentTag->getStart()] = array($currentTag);
+                next($groupList);
+                continue;
+            }
+            $groupList[key($groupList)][] = $currentTag;
+        }
+
+        return $groupList;
+    }
+
+    /**
+     * Check is new group needed
+     *
+     * @param TagInterface $previousTag
+     * @param TagInterface $currentTag
      * @param string $html
+     * @return bool
+     */
+    private function isNewGroupNeeded(TagInterface $previousTag, TagInterface $currentTag, string $html): bool
+    {
+        $betweenText = $this->getStringFromHtml->execute(
+            $html,
+            $previousTag->getEnd() + 1,
+            $currentTag->getStart()
+        );
+
+        if (preg_match('/<[^>]+?>/is', $betweenText) === 1) {
+            return true;
+        }
+
+        if ($this->isRequireJsConfigOrStaticFile($previousTag) || $this->isRequireJsOrStaticFile($previousTag)) {
+            return true;
+        }
+
+        if ($this->isTagMustBeIgnored($currentTag) || $this->isTagMustBeIgnored($currentTag)) {
+            return true;
+        }
+
+        if (!$this->isInternalFile($previousTag) || !$this->isInternalFile($currentTag)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check is requirejs config or static file
+     *
+     * @param TagInterface $tag Tag
+     * @return bool Is requirejs config or static file
+     */
+    private function isRequireJsConfigOrStaticFile(TagInterface $tag): bool
+    {
+        $attributes = $tag->getAttributes();
+        return isset($attributes['src']) && preg_match('/(requirejs-config(\.min)?\.js|mage\/requirejs\/static(\.min)?\.js)$/', $attributes['src']) === 1;
+    }
+
+    /**
+     * Check is requirejs or static file
+     *
+     * @param TagInterface $tag Tag
+     * @return bool Is requirejs or static file
+     */
+    private function isRequireJsOrStaticFile(TagInterface $tag): bool
+    {
+        $attributes = $tag->getAttributes();
+        return isset($attributes['src']) && preg_match('/(requirejs\/require(\.min)?\.js)$/', $attributes['src']) === 1;
+    }
+
+    /**
+     * Check is tag must be ignored
+     *
+     * @param TagInterface $tag Tag
+     * @return bool Is tag must be ignored
+     */
+    private function isTagMustBeIgnored(TagInterface $tag): bool
+    {
+        return $this->isTagMustBeIgnored->execute(
+            $tag->getContent(),
+            [self::IGNORE_MERGE_FLAG],
+            $this->config->getExcludeAnchors()
+        );
+    }
+
+    /**
+     * Check is internal file
+     *
+     * @param TagInterface $tag Tag
+     * @return bool Is internal file
+     */
+    private function isInternalFile(TagInterface $tag): bool
+    {
+        $attributes = $tag->getAttributes();
+        return isset($attributes['src']) && $this->isInternalUrl->execute($attributes['src'])
+            && file_exists($this->getLocalPathFromUrl->execute($attributes['src']));
+    }
+
+    /**
+     * Insert requirejs and static files into html
+     *
+     * @param string $html HTML content
      * @return void
      * @throws \Magento\Framework\Exception\NoSuchEntityException
      */
     private function insertRequireJsFiles(string &$html): void
     {
-        $requireJsList = $key = null;
-        $tagList = $this->jsFinder->findInline($html);
-        foreach ($tagList as $tag) {
-            /** @var TagInterface $tag */
-            $attributes = $tag->getAttributes();
-            if (!array_key_exists(RequireJsManager::SCRIPT_TAG_DATA_KEY, $attributes)) {
-                continue;
-            }
-            $key = $attributes[RequireJsManager::SCRIPT_TAG_DATA_KEY];
-            break;
-        }
-
+        $key = $this->findRequireJsKey($html);
         if ($key === null) {
             return;
         }
 
-        if ($this->requireJsManager->isDataExists($key) === false) {
+        if (!$this->requireJsManager->isDataExists($key)) {
             $this->response->setNoCacheHeaders();
             return;
         }
 
+        $this->insertRequireJsScripts($html, $key);
+    }
+
+    /**
+     * Find requirejs key in html
+     *
+     * @param string $html HTML content
+     * @return string|null RequireJs key
+     */
+    private function findRequireJsKey(string $html): ?string
+    {
+        $tagList = $this->jsFinder->findInline($html);
+        foreach ($tagList as $tag) {
+            $attributes = $tag->getAttributes();
+            if (isset($attributes[RequireJsManager::SCRIPT_TAG_DATA_KEY])) {
+                return $attributes[RequireJsManager::SCRIPT_TAG_DATA_KEY];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Insert requirejs and static files into html
+     *
+     * @param string $html HTML content
+     * @param string $key RequireJs key
+     * @return void
+     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     */
+    private function insertRequireJsScripts(string &$html, string $key): void
+    {
         $jsTagList = $this->jsFinder->findExternal($html);
         foreach ($jsTagList as $tag) {
-            /** @var TagInterface $tag */
-            $attributes = $tag->getAttributes();
-            $src = $attributes['src'];
-            if (!preg_match('/requirejs\/require\.(min\.)?js/', $src)) {
+            if (!$this->isRequireJsOrStaticFile($tag)) {
                 continue;
             }
-            if (!preg_match('/requirejs\/require\.js/', $src)) {
-                continue;
-            }
+
             $filePath = $this->getRequireJsResultFilePath($key);
             if (!file_exists($filePath)) {
                 $this->putContentInFile->execute(
@@ -346,11 +398,13 @@ class MergeJs implements MergeJsInterface
                     $filePath
                 );
             }
+
             $urlToFile = $this->getRequireJsResultUrl($key);
-            $urlToLib = $this->getRequireJsBuildScriptUrl->execute($src);
+            $urlToLib = $this->getRequireJsBuildScriptUrl->execute($tag->getAttributes()['src']);
             $insertString = $tag->getContent() . "\n"
                 . "<script type='text/javascript' src='$urlToFile'></script>"
                 . "<script type='text/javascript' src='$urlToLib'></script>";
+
             $html = $this->replaceIntoHtml->execute($html, $insertString, $tag->getStart(), $tag->getEnd());
             break;
         }
@@ -388,8 +442,7 @@ class MergeJs implements MergeJsInterface
      */
     private function getRequireJsResultFileName(string $key): string
     {
-        $urlList = $this->requireJsManager->loadUrlList($key);
-        $urlList = $urlList ?? [];
+        $urlList = $this->requireJsManager->loadUrlList($key) ?? [];
         sort($urlList);
         $name = md5(implode(',', $urlList));
         return md5($key . '||' . $name . '||' . $this->getLastFileChangeTimestampForUrlList->execute($urlList)) . '.js';
