@@ -169,7 +169,7 @@ class Collect implements ActionInterface, HttpPostActionInterface
         // Case 2: Check the processed file for missing URLs.
         if (!$hasNewItems) {
             $jsResultFilePath = $this->jsFileProcessor->getRequireJsResultFilePath($cacheKey);
-            if (is_file($jsResultFilePath)) {
+            if (file_exists($jsResultFilePath)) {
                 $fileContent = (string) file_get_contents($jsResultFilePath);
                 foreach ($newUrlList as $url) {
                     if (!$this->isLocalFileAvailable($url)) {
@@ -182,6 +182,9 @@ class Collect implements ActionInterface, HttpPostActionInterface
                         $hasNewItems = true;
                     }
                 }
+            } else {
+                // The processed file is missing, so we add all new URLs.
+                $hasNewItems = true;
             }
         }
 
