@@ -1,6 +1,6 @@
 <?php
 /**
- * Copyright (c) 2022. All rights reserved.
+ * Copyright (c) 2025. All rights reserved.
  * @author: Volodymyr Hryvinskyi <mailto:volodymyr@hryvinskyi.com>
  */
 
@@ -23,11 +23,11 @@ use Hryvinskyi\PageSpeedApi\Api\PutContentInFileInterface;
 use Hryvinskyi\PageSpeedApi\Model\CacheInterface;
 use Hryvinskyi\PageSpeedJsMerge\Api\ConfigInterface;
 use Hryvinskyi\PageSpeedJsMerge\Api\MergeJsInterface;
+use Hryvinskyi\PageSpeedJsMerge\Model\Cache\JsList;
 use Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\Merger\Js as JsMerger;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\App\ResponseInterface;
 use Hryvinskyi\PageSpeedJsMerge\Model\RequireJsManager;
-use Hryvinskyi\PageSpeedApi\Api\Finder\Result\RawInterface;
 
 class MergeJs implements MergeJsInterface
 {
@@ -50,6 +50,7 @@ class MergeJs implements MergeJsInterface
     private GetStringFromHtmlInterface $getStringFromHtml;
     private GetLocalPathFromUrlInterface $getLocalPathFromUrl;
     private JsMerger $jsMerger;
+    private JsList $jsListCache;
 
     /**
      * @param ConfigInterface $config
@@ -87,7 +88,8 @@ class MergeJs implements MergeJsInterface
         GetRequireJsBuildScriptUrlInterface $getRequireJsBuildScriptUrl,
         GetStringFromHtmlInterface $getStringFromHtml,
         GetLocalPathFromUrlInterface $getLocalPathFromUrl,
-        JsMerger $jsMerger
+        JsMerger $jsMerger,
+        JsList $jsListCache
     ) {
         $this->config = $config;
         $this->cache = $cache;
@@ -106,6 +108,7 @@ class MergeJs implements MergeJsInterface
         $this->getStringFromHtml = $getStringFromHtml;
         $this->getLocalPathFromUrl = $getLocalPathFromUrl;
         $this->jsMerger = $jsMerger;
+        $this->jsListCache = $jsListCache;
     }
 
     /**
@@ -179,7 +182,9 @@ class MergeJs implements MergeJsInterface
             if ($mergedUrl === null) {
                 continue;
             }
-
+            if ($latestTime = $this->jsListCache->getCache()->load('last_update')) {
+                $mergedUrl .= '?time=' . $latestTime;
+            }
             $firstTag = reset($group);
             $lastTag = end($group);
             $replaceData[] = [
@@ -209,11 +214,7 @@ class MergeJs implements MergeJsInterface
     private function excludeIgnoredTags(array &$tagList): void
     {
         foreach ($tagList as $key => $tag) {
-            if ($this->isTagMustBeIgnored->execute(
-                $tag->getContent(),
-                [self::IGNORE_MERGE_FLAG],
-                $this->config->getExcludeAnchors()
-            )) {
+            if ($this->isTagMustBeIgnored->execute($tag->getContent(), [self::IGNORE_MERGE_FLAG], $this->config->getExcludeAnchors())) {
                 unset($tagList[$key]);
             }
         }
@@ -401,9 +402,14 @@ class MergeJs implements MergeJsInterface
 
             $urlToFile = $this->getRequireJsResultUrl($key);
             $urlToLib = $this->getRequireJsBuildScriptUrl->execute($tag->getAttributes()['src']);
+
+            if ($latestTime = $this->jsListCache->getCache()->load('last_update')) {
+                $urlToFile .= '?time=' . $latestTime;
+            }
+
             $insertString = $tag->getContent() . "\n"
-                . "<script type='text/javascript' src='$urlToFile'></script>"
-                . "<script type='text/javascript' src='$urlToLib'></script>";
+                . "<script type='text/javascript' src='$urlToLib'></script>" . "\n"
+                . "<script type='text/javascript' src='$urlToFile'></script>";
 
             $html = $this->replaceIntoHtml->execute($html, $insertString, $tag->getStart(), $tag->getEnd());
             break;
