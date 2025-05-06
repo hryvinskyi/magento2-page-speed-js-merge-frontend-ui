@@ -1,21 +1,31 @@
 <?php
 /**
- * Copyright (c) 2024. All rights reserved.
+ * Copyright (c) 2024-2025. All rights reserved.
  * @author: Volodymyr Hryvinskyi <mailto:volodymyr@hryvinskyi.com>
  */
 
 /**
- * @var $block \Hryvinskyi\PageSpeedJsMergeFrontendUi\Block\RequireJsDataCollector
+ * @var \Hryvinskyi\PageSpeedJsMergeFrontendUi\Block\RequireJsDataCollector $block
+ * @var \Magento\Framework\View\Helper\SecureHtmlRenderer $secureRenderer
  */
-?>
-<script type="text/javascript" <?php echo $block->getScriptDataKey();?>="<?php echo $block->getRouteKey();?>" data-pagespeed-ignore-merge>
-    require(['Hryvinskyi_PageSpeedJsMergeFrontendUi/js/require-js-data-collector'], function (dataCollector) {
-        dataCollector.init(
-            <?php echo json_encode($block->getRouteKey());?>,
-            <?php echo json_encode($block->getRequestUrl());?>,
-            <?php echo json_encode($block->getPageCacheTags());?>,
-            <?php echo json_encode($block->getIgnore());?>
-        );
-        dataCollector.run();
-    });
-</script>
+
+$routeKey = json_encode($block->getRouteKey());
+$requestUrl = json_encode($block->getRequestUrl());
+$pageCacheTags = json_encode($block->getPageCacheTags());
+$ignore = json_encode($block->getIgnore());
+
+$scriptContent = <<<JS
+require(['Hryvinskyi_PageSpeedJsMergeFrontendUi/js/require-js-data-collector'], function (dataCollector) {
+    dataCollector.init({$routeKey}, {$requestUrl}, {$pageCacheTags}, {$ignore});
+    dataCollector.run();
+});
+JS;
+echo $secureRenderer->renderTag(
+    'script',
+    [
+        $block->getScriptDataKey() => $block->getRouteKey(),
+        'data-pagespeed-ignore-merge' => null
+    ],
+    $scriptContent,
+    false
+);
