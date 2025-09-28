@@ -6,6 +6,26 @@
 
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <!-- Processor pool configuration -->
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\MergeProcessorPoolInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\MergeProcessorPool" />
+
+    <!-- Data object preference -->
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\Data\ProcessContentDataInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\Data\ProcessContentData" />
+
+    <!-- Register default processor in the pool -->
+    <type name="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\MergeProcessorPool">
+        <arguments>
+            <argument name="processors" xsi:type="array">
+                <item name="default" xsi:type="array">
+                    <item name="processor" xsi:type="object">Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\DefaultMergeProcessor</item>
+                    <item name="sortOrder" xsi:type="number">10</item>
+                </item>
+            </argument>
+        </arguments>
+    </type>
+
     <type name="Hryvinskyi\PageSpeedApi\Model\ModificationsList">
         <arguments>
             <argument name="modifications" xsi:type="array">

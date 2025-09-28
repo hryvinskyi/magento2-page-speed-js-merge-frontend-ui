@@ -25,9 +25,11 @@ use Hryvinskyi\PageSpeedJsMerge\Api\ConfigInterface;
 use Hryvinskyi\PageSpeedJsMerge\Api\MergeJsInterface;
 use Hryvinskyi\PageSpeedJsMerge\Model\Cache\JsList;
 use Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\Merger\Js as JsMerger;
+use Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\MergeProcessorPoolInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\App\ResponseInterface;
 use Hryvinskyi\PageSpeedJsMerge\Model\RequireJsManager;
+use Magento\Framework\Exception\NoSuchEntityException;
 
 class MergeJs implements MergeJsInterface
 {
@@ -51,6 +53,7 @@ class MergeJs implements MergeJsInterface
     private GetLocalPathFromUrlInterface $getLocalPathFromUrl;
     private JsMerger $jsMerger;
     private JsList $jsListCache;
+    private MergeProcessorPoolInterface $mergeProcessorPool;
 
     /**
      * @param ConfigInterface $config
@@ -70,6 +73,7 @@ class MergeJs implements MergeJsInterface
      * @param GetStringFromHtmlInterface $getStringFromHtml
      * @param GetLocalPathFromUrlInterface $getLocalPathFromUrl
      * @param JsMerger $jsMerger
+     * @param MergeProcessorPoolInterface $mergeProcessorPool
      */
     public function __construct(
         ConfigInterface $config,
@@ -89,7 +93,8 @@ class MergeJs implements MergeJsInterface
         GetStringFromHtmlInterface $getStringFromHtml,
         GetLocalPathFromUrlInterface $getLocalPathFromUrl,
         JsMerger $jsMerger,
-        JsList $jsListCache
+        JsList $jsListCache,
+        MergeProcessorPoolInterface $mergeProcessorPool
     ) {
         $this->config = $config;
         $this->cache = $cache;
@@ -109,6 +114,7 @@ class MergeJs implements MergeJsInterface
         $this->getLocalPathFromUrl = $getLocalPathFromUrl;
         $this->jsMerger = $jsMerger;
         $this->jsListCache = $jsListCache;
+        $this->mergeProcessorPool = $mergeProcessorPool;
     }
 
     /**
@@ -182,20 +188,32 @@ class MergeJs implements MergeJsInterface
             if ($mergedUrl === null) {
                 continue;
             }
+
+            // Process attributes using merge processor pool extension point
+            $attributes = $this->mergeProcessorPool->processAttributes([], $mergedUrl);
+
             if ($latestTime = $this->jsListCache->getCache()->load('last_update')) {
                 $mergedUrl .= '?time=' . $latestTime;
             }
+
             $firstTag = reset($group);
             $lastTag = end($group);
             $replaceData[] = [
                 'start' => $firstTag->getStart(),
                 'end' => $lastTag->getEnd(),
-                'url' => $mergedUrl
+                'url' => $mergedUrl,
+                'attributes' => $attributes
             ];
         }
 
         foreach (array_reverse($replaceData) as $replaceElData) {
-            $replacement = '<script type="text/javascript" src="' . $replaceElData['url'] . '"></script>';
+            // Build attributes string from processed attributes
+            $attributesString = '';
+            foreach ($replaceElData['attributes'] as $name => $value) {
+                $attributesString .= ' ' . $name . '="' . htmlspecialchars($value) . '"';
+            }
+
+            $replacement = '<script type="text/javascript" src="' . $replaceElData['url'] . '"' . $attributesString . '></script>';
             $html = $this->replaceIntoHtml->execute(
                 $html,
                 $replacement,
@@ -336,32 +354,36 @@ class MergeJs implements MergeJsInterface
     }
 
     /**
-     * Insert requirejs and static files into html
+     * Insert RequireJS and static files into HTML content
      *
-     * @param string $html HTML content
+     * @param string $html HTML content to modify
      * @return void
      * @throws \Magento\Framework\Exception\NoSuchEntityException
      */
     private function insertRequireJsFiles(string &$html): void
     {
-        $key = $this->findRequireJsKey($html);
-        if ($key === null) {
+        $requireJsKey = $this->findRequireJsKey($html);
+        if ($requireJsKey === null) {
             return;
         }
 
-        if (!$this->requireJsManager->isDataExists($key)) {
+        $jsTagList = $this->jsFinder->findExternal($html);
+
+        if (!$this->requireJsManager->isDataExists($requireJsKey)) {
+            $this->processRequireJsStaticFiles($jsTagList, $html, $requireJsKey);
             $this->response->setNoCacheHeaders();
             return;
         }
 
-        $this->insertRequireJsScripts($html, $key);
+        $this->processRequireJsMergedFiles($jsTagList, $html, $requireJsKey);
+        $this->processRequireJsStaticFiles($jsTagList, $html, $requireJsKey);
     }
 
     /**
-     * Find requirejs key in html
+     * Find RequireJS key in HTML content
      *
      * @param string $html HTML content
-     * @return string|null RequireJs key
+     * @return string|null RequireJS key if found, null otherwise
      */
     private function findRequireJsKey(string $html): ?string
     {
@@ -377,43 +399,157 @@ class MergeJs implements MergeJsInterface
     }
 
     /**
-     * Insert requirejs and static files into html
+     * Process RequireJS static files and insert them into HTML
      *
-     * @param string $html HTML content
-     * @param string $key RequireJs key
+     * @param array<TagInterface> $jsTagList List of JavaScript tags
+     * @param string $html HTML content to modify
+     * @param string $requireJsKey RequireJS key
      * @return void
-     * @throws \Magento\Framework\Exception\NoSuchEntityException
      */
-    private function insertRequireJsScripts(string &$html, string $key): void
+    private function processRequireJsStaticFiles(array $jsTagList, string &$html, string $requireJsKey): void
     {
-        $jsTagList = $this->jsFinder->findExternal($html);
-        foreach ($jsTagList as $tag) {
-            if (!$this->isRequireJsOrStaticFile($tag)) {
-                continue;
-            }
+        $this->processRequireJsScriptsByType($jsTagList, $html, $requireJsKey, true);
+    }
 
-            $filePath = $this->getRequireJsResultFilePath($key);
-            if (!file_exists($filePath)) {
-                $this->putContentInFile->execute(
-                    $this->requireJsManager->getRequireJsContent($key),
-                    $filePath
-                );
-            }
+    /**
+     * Process RequireJS merged files and insert them into HTML
+     *
+     * @param array<TagInterface> $jsTagList List of JavaScript tags
+     * @param string $html HTML content to modify
+     * @param string $requireJsKey RequireJS key
+     * @return void
+     */
+    private function processRequireJsMergedFiles(array $jsTagList, string &$html, string $requireJsKey): void
+    {
+        $this->processRequireJsScriptsByType($jsTagList, $html, $requireJsKey, false);
+    }
 
-            $urlToFile = $this->getRequireJsResultUrl($key);
-            $urlToLib = $this->getRequireJsBuildScriptUrl->execute($tag->getAttributes()['src']);
-
-            if ($latestTime = $this->jsListCache->getCache()->load('last_update')) {
-                $urlToFile .= '?time=' . $latestTime;
-            }
-
-            $insertString = $tag->getContent() . "\n"
-                . "<script type='text/javascript' src='$urlToLib'></script>" . "\n"
-                . "<script type='text/javascript' src='$urlToFile'></script>";
-
-            $html = $this->replaceIntoHtml->execute($html, $insertString, $tag->getStart(), $tag->getEnd());
-            break;
+    /**
+     * Process RequireJS scripts by type and insert them into HTML content
+     *
+     * @param array<TagInterface> $jsTagList List of JavaScript tags
+     * @param string $html HTML content to modify
+     * @param string $requireJsKey RequireJS key
+     * @param bool $isStaticOnly Whether to process only static RequireJS files
+     * @return void
+     * @throws NoSuchEntityException
+     */
+    private function processRequireJsScriptsByType(array $jsTagList, string &$html, string $requireJsKey, bool $isStaticOnly): void
+    {
+        $requireJsTag = $this->findRequireJsTag($jsTagList);
+        if ($requireJsTag === null) {
+            return;
         }
+
+        $this->ensureRequireJsFileExists($requireJsKey);
+
+        $scriptTag = $this->buildRequireJsScriptTag($requireJsTag, $requireJsKey, $isStaticOnly);
+
+        $this->replaceTagInHtml($html, $requireJsTag, $scriptTag);
+    }
+
+    /**
+     * Find RequireJS tag in the list of JavaScript tags
+     *
+     * @param array<TagInterface> $jsTagList List of JavaScript tags
+     * @return TagInterface|null RequireJS tag if found, null otherwise
+     */
+    private function findRequireJsTag(array $jsTagList): ?TagInterface
+    {
+        foreach ($jsTagList as $tag) {
+            if ($this->isRequireJsOrStaticFile($tag)) {
+                return $tag;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Ensure RequireJS file exists and create it if necessary
+     *
+     * @param string $requireJsKey RequireJS key
+     * @return void
+     * @throws NoSuchEntityException
+     */
+    private function ensureRequireJsFileExists(string $requireJsKey): void
+    {
+        $filePath = $this->getRequireJsResultFilePath($requireJsKey);
+        if (!file_exists($filePath)) {
+            $this->putContentInFile->execute(
+                $this->requireJsManager->getRequireJsContent($requireJsKey),
+                $filePath
+            );
+        }
+    }
+
+    /**
+     * Build RequireJS script tag content
+     *
+     * @param TagInterface $requireJsTag Original RequireJS tag
+     * @param string $requireJsKey RequireJS key
+     * @param bool $isStaticOnly Whether to use static URL only
+     * @return string Generated script tag content
+     * @throws NoSuchEntityException
+     */
+    private function buildRequireJsScriptTag(TagInterface $requireJsTag, string $requireJsKey, bool $isStaticOnly): string
+    {
+        $tagAttributes = $requireJsTag->getAttributes();
+        $originalContent = $requireJsTag->getContent();
+
+        if ($isStaticOnly) {
+            $scriptUrl = $this->getRequireJsBuildScriptUrl->execute($tagAttributes['src']);
+        } else {
+            $scriptUrl = $this->getRequireJsResultUrl($requireJsKey);
+            $scriptUrl = $this->appendCacheTimestamp($scriptUrl);
+        }
+
+        return $originalContent . "\n" . $this->generateScriptTag($scriptUrl);
+    }
+
+    /**
+     * Append cache timestamp to URL if available
+     *
+     * @param string $url URL to append timestamp to
+     * @return string URL with timestamp appended
+     */
+    private function appendCacheTimestamp(string $url): string
+    {
+        $latestTime = $this->jsListCache->getCache()->load('last_update');
+        if ($latestTime) {
+            $url .= '?time=' . $latestTime;
+        }
+
+        return $url;
+    }
+
+    /**
+     * Generate script tag HTML
+     *
+     * @param string $scriptUrl Script URL
+     * @return string Generated script tag HTML
+     */
+    private function generateScriptTag(string $scriptUrl): string
+    {
+        return "<script type='text/javascript' src='$scriptUrl'></script>";
+    }
+
+    /**
+     * Replace tag in HTML content
+     *
+     * @param string $html HTML content to modify
+     * @param TagInterface $originalTag Original tag to replace
+     * @param string $newContent New content to insert
+     * @return void
+     */
+    private function replaceTagInHtml(string &$html, TagInterface $originalTag, string $newContent): void
+    {
+        $html = $this->replaceIntoHtml->execute(
+            $html,
+            $newContent,
+            $originalTag->getStart(),
+            $originalTag->getEnd()
+        );
     }
 
     /**

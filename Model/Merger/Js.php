@@ -15,6 +15,9 @@ use Hryvinskyi\PageSpeedApi\Api\GetContentFromTagInterface;
 use Hryvinskyi\PageSpeedApi\Api\GetLocalPathFromUrlInterface;
 use Hryvinskyi\PageSpeedApi\Model\CacheInterface;
 use Hryvinskyi\PageSpeedJsMerge\Api\ConfigInterface;
+use Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\Data\ProcessContentDataInterface;
+use Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\MergeProcessorPoolInterface;
+use Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\Data\ProcessContentDataFactory;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\DataObject;
 use Magento\Framework\Event\ManagerInterface as EventManager;
@@ -28,6 +31,8 @@ class Js extends AbstractMerger
     private GetContentFromTagInterface $getContentFromTag;
     private CreateFileByContentInterface $createFileByContent;
     private EventManager $eventManager;
+    private MergeProcessorPoolInterface $mergeProcessorPool;
+    private ProcessContentDataFactory $processContentDataFactory;
 
     /**
      * @param GetLocalPathFromUrlInterface $getLocalPathFromUrl
@@ -37,6 +42,8 @@ class Js extends AbstractMerger
      * @param GetContentFromTagInterface $getContentFromTag
      * @param CreateFileByContentInterface $createFileByContent
      * @param EventManager $eventManager
+     * @param MergeProcessorPoolInterface $mergeProcessorPool
+     * @param ProcessContentDataFactory $processContentDataFactory
      * @param LoggerInterface $logger
      */
     public function __construct(
@@ -47,6 +54,8 @@ class Js extends AbstractMerger
         GetContentFromTagInterface $getContentFromTag,
         CreateFileByContentInterface $createFileByContent,
         EventManager $eventManager,
+        MergeProcessorPoolInterface $mergeProcessorPool,
+        ProcessContentDataFactory $processContentDataFactory,
         LoggerInterface $logger
     ) {
         parent::__construct($getLocalPathFromUrl, $logger);
@@ -56,6 +65,8 @@ class Js extends AbstractMerger
         $this->getContentFromTag = $getContentFromTag;
         $this->createFileByContent = $createFileByContent;
         $this->eventManager = $eventManager;
+        $this->mergeProcessorPool = $mergeProcessorPool;
+        $this->processContentDataFactory = $processContentDataFactory;
     }
 
     /**
@@ -81,17 +92,37 @@ class Js extends AbstractMerger
             return null;
         }
 
+        $currentFileIndex = 0;
+        $totalFiles = count($files);
+
         $mergeFilesResult = $this->mergeFiles(
             $files,
             $targetDir . DIRECTORY_SEPARATOR . $targetFilename,
             false,
-            function ($file, $contents) {
+            function ($file, $contents) use (&$currentFileIndex, $totalFiles, $resultUrl) {
+                $currentFileIndex++;
+                $isLastFile = ($currentFileIndex === $totalFiles);
+
                 $data = new DataObject();
                 $data->setData('content', $contents);
                 $data->setData('file', $file);
                 $this->eventManager->dispatch('pagespeed_prepare_content_on_merge_files', ['data' => $data]);
 
-                return $data->getData('content') . ';';
+                // Create process data object using factory
+                $processData = $this->processContentDataFactory->create([
+                    'content' => $data->getData('content'),
+                    'filePath' => $file,
+                    'mergedFilePath' => $resultUrl,
+                    'isFirstFile' => $currentFileIndex === 1,
+                    'isLastFile' => $isLastFile,
+                    'currentFileIndex' => $currentFileIndex,
+                    'totalFiles' => $totalFiles
+                ]);
+
+                // Use merge processor pool extension point
+                $processedContent = $this->mergeProcessorPool->processContent($processData);
+
+                return $processedContent;
             },
             ['js']
         );
@@ -142,4 +173,5 @@ class Js extends AbstractMerger
         }
         return implode(',', $result);
     }
+
 }
