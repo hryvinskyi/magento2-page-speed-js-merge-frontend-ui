@@ -131,6 +131,11 @@ class MergeJs implements MergeJsInterface
         $replaceData = [];
         foreach ($tagList as $tag) {
             $attributes = $tag->getAttributes();
+
+            if (isset($attributes[static::FLAG_IGNORE_MERGE])) {
+                continue;
+            }
+
             if (!$this->isInternalUrl->execute($attributes['src'])) {
                 continue;
             }
@@ -175,6 +180,9 @@ class MergeJs implements MergeJsInterface
         if (empty($tagList)) {
             return;
         }
+
+        // Remove ignored tags from the list
+        $this->excludeIgnoredTagsByAttribute($tagList);
 
         $groupList = $this->groupTags($tagList, $html);
 
@@ -226,7 +234,7 @@ class MergeJs implements MergeJsInterface
     /**
      * Exclude ignored tags
      *
-     * @param array $tagList
+     * @param \Hryvinskyi\PageSpeedApi\Api\Finder\Result\TagInterface[] $tagList
      * @return void
      */
     private function excludeIgnoredTags(array &$tagList): void
@@ -236,6 +244,23 @@ class MergeJs implements MergeJsInterface
                 unset($tagList[$key]);
             }
         }
+    }
+
+    /**
+     * Exclude ignored tags by attribute
+     *
+     * @param \Hryvinskyi\PageSpeedApi\Api\Finder\Result\TagInterface[] $tagList
+     * @return void
+     */
+    private function excludeIgnoredTagsByAttribute(array &$tagList): void
+    {
+        $newTagList = [];
+        foreach ($tagList as $tag) {
+            if (!array_key_exists(static::FLAG_IGNORE_MERGE, $tag->getAttributes())) {
+                $newTagList[] = $tag;
+            }
+        }
+        $tagList = $newTagList;
     }
 
     /**
