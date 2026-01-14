@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  ~ Copyright (c) 2022. All rights reserved.
+  ~ Copyright (c) 2022-2026. All rights reserved.
   ~ @author: Volodymyr Hryvinskyi <mailto:volodymyr@hryvinskyi.com>
   -->
 
@@ -8,4 +8,16 @@
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
     <preference for="Hryvinskyi\PageSpeedJsMerge\Api\MergeJsInterface"
                 type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\MergeJs"/>
+
+    <!-- Plugin to add RequireJS ready marker and Promise -->
+    <type name="Magento\Framework\RequireJs\Config">
+        <plugin name="add_requirejs_ready_marker"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Plugin\RequireJsConfigPlugin"
+                sortOrder="100"/>
+    </type>
+    <type name="Hryvinskyi\PageSpeedJsMergeFrontendUi\Plugin\RequireJsConfigPlugin">
+        <arguments>
+            <argument name="minifyAdapter" xsi:type="object">jsMinificationAdapter</argument>
+        </arguments>
+    </type>
 </config>

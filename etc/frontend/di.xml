@@ -42,15 +42,4 @@
                 sortOrder="-60"/>
     </type>
 
-    <!-- Plugin to add RequireJS ready marker and Promise -->
-    <type name="Magento\Framework\RequireJs\Config">
-        <plugin name="add_requirejs_ready_marker"
-                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Plugin\RequireJsConfigPlugin"
-                sortOrder="100"/>
-    </type>
-    <type name="Hryvinskyi\PageSpeedJsMergeFrontendUi\Plugin\RequireJsConfigPlugin">
-        <arguments>
-            <argument name="minifyAdapter" xsi:type="object">jsMinificationAdapter</argument>
-        </arguments>
-    </type>
 </config>
