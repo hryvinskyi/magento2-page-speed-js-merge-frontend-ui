@@ -47,9 +47,9 @@ class Collect implements ActionInterface, HttpPostActionInterface
         JsFileProcessor $jsFileProcessor,
         PageCachePurger $cachePurger,
         RequestInterface $request,
-        JsList $cache = null,
-        PutContentInFileInterface $putContentInFile = null,
-        GetLocalPathFromUrlInterface $getLocalPathFromUrl = null
+        ?JsList $cache = null,
+        ?PutContentInFileInterface $putContentInFile = null,
+        ?GetLocalPathFromUrlInterface $getLocalPathFromUrl = null
     ) {
         $this->jsonFactory = $jsonFactory;
         $this->requireJsManager = $requireJsManager;
