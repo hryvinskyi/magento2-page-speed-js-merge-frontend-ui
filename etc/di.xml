@@ -8,6 +8,44 @@
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
     <preference for="Hryvinskyi\PageSpeedJsMerge\Api\MergeJsInterface"
                 type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\MergeJs"/>
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\RequireJsBundleLocatorInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\MergeJs"/>
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\BundleFileWriterInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\BundleFileWriter"/>
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\CollectTokenInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\CollectToken"/>
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\CollectThrottleInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\CollectThrottle"/>
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\CollectedUrlFilterInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\CollectedUrlFilter"/>
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\RecordCollectedUrlsInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\RecordCollectedUrls"/>
+    <preference for="Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\DesignBaseUrlResolverInterface"
+                type="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\DesignBaseUrlResolver"/>
+
+    <type name="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\BundleFileWriter">
+        <arguments>
+            <argument name="driver" xsi:type="object">Magento\Framework\Filesystem\Driver\File</argument>
+        </arguments>
+    </type>
+    <!-- A collect that adds modules to a route key's list holds the key for this long; other reports that would add
+         modules in that period are answered without work. -->
+    <type name="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\CollectThrottle">
+        <arguments>
+            <argument name="holdSeconds" xsi:type="number">60</argument>
+        </arguments>
+    </type>
+    <!-- Most URLs one collect may report and one route key's list may hold. Stored lists reach about 1000 URLs, and a
+         refused first list keeps that page type out of the page cache, so the limit stays well above that. -->
+    <type name="Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\RecordCollectedUrls">
+        <arguments>
+            <argument name="maxUrlCount" xsi:type="number">3000</argument>
+            <!-- A first report may carry every module a page loaded; one report adds at most this many, later ones the rest. -->
+            <argument name="maxNewUrlsPerReport" xsi:type="number">200</argument>
+            <!-- 20 MB: the files a list names are inlined into one bundle every visitor of its pages downloads. -->
+            <argument name="maxTotalBytes" xsi:type="number">20971520</argument>
+        </arguments>
+    </type>
 
     <!-- Plugin to add RequireJS ready marker and Promise -->
     <type name="Magento\Framework\RequireJs\Config">

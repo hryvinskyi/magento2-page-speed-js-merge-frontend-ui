@@ -1,6 +1,6 @@
 <?php
 /**
- * Copyright (c) 2025. All rights reserved.
+ * Copyright (c) 2025-2026. All rights reserved.
  * @author: Volodymyr Hryvinskyi <mailto:volodymyr@hryvinskyi.com>
  */
 
@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace Hryvinskyi\PageSpeedJsMergeFrontendUi\Model;
 
+use Hryvinskyi\PageSpeed\Model\Cache as PageSpeedCache;
 use Hryvinskyi\PageSpeed\Model\GetLastFileChangeTimestampForUrlList;
 use Hryvinskyi\PageSpeedApi\Api\Finder\JsInterface as JsFinderInterface;
 use Hryvinskyi\PageSpeedApi\Api\Finder\Result\TagInterface;
@@ -19,41 +20,23 @@ use Hryvinskyi\PageSpeedApi\Api\Html\GetStringFromHtmlInterface;
 use Hryvinskyi\PageSpeedApi\Api\Html\IsTagMustBeIgnoredInterface;
 use Hryvinskyi\PageSpeedApi\Api\Html\ReplaceIntoHtmlInterface;
 use Hryvinskyi\PageSpeedApi\Api\IsInternalUrlInterface;
-use Hryvinskyi\PageSpeedApi\Api\PutContentInFileInterface;
 use Hryvinskyi\PageSpeedApi\Model\CacheInterface;
 use Hryvinskyi\PageSpeedJsMerge\Api\ConfigInterface;
 use Hryvinskyi\PageSpeedJsMerge\Api\MergeJsInterface;
 use Hryvinskyi\PageSpeedJsMerge\Model\Cache\JsList;
-use Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\Merger\Js as JsMerger;
-use Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\MergeProcessorPoolInterface;
-use Magento\Framework\App\RequestInterface;
-use Magento\Framework\App\ResponseInterface;
 use Hryvinskyi\PageSpeedJsMerge\Model\RequireJsManager;
+use Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\BundleFileWriterInterface;
+use Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\MergeProcessorPoolInterface;
+use Hryvinskyi\PageSpeedJsMergeFrontendUi\Api\RequireJsBundleLocatorInterface;
+use Hryvinskyi\PageSpeedJsMergeFrontendUi\Model\Merger\Js as JsMerger;
+use Magento\Framework\App\RequestInterface;
+use Magento\Framework\App\Response\Http as HttpResponse;
+use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Exception\NoSuchEntityException;
 
-class MergeJs implements MergeJsInterface
+class MergeJs implements MergeJsInterface, RequireJsBundleLocatorInterface
 {
     private const IGNORE_MERGE_FLAG = 'ignore_merge';
-
-    private ConfigInterface $config;
-    private CacheInterface $cache;
-    private ResponseInterface $response;
-    private RequestInterface $request;
-    private RequireJsManager $requireJsManager;
-    private JsFinderInterface $jsFinder;
-    private ReplaceIntoHtmlInterface $replaceIntoHtml;
-    private PutContentInFileInterface $putContentInFile;
-    private IsTagMustBeIgnoredInterface $isTagMustBeIgnored;
-    private IsInternalUrlInterface $isInternalUrl;
-    private GetStringLengthFromUrlInterface $getStringLengthFromUrl;
-    private GetFileContentByUrlInterface $getFileContentByUrl;
-    private GetLastFileChangeTimestampForUrlList $getLastFileChangeTimestampForUrlList;
-    private GetRequireJsBuildScriptUrlInterface $getRequireJsBuildScriptUrl;
-    private GetStringFromHtmlInterface $getStringFromHtml;
-    private GetLocalPathFromUrlInterface $getLocalPathFromUrl;
-    private JsMerger $jsMerger;
-    private JsList $jsListCache;
-    private MergeProcessorPoolInterface $mergeProcessorPool;
 
     /**
      * @param ConfigInterface $config
@@ -63,7 +46,7 @@ class MergeJs implements MergeJsInterface
      * @param RequireJsManager $requireJsManager
      * @param JsFinderInterface $jsFinder
      * @param ReplaceIntoHtmlInterface $replaceIntoHtml
-     * @param PutContentInFileInterface $putContentInFile
+     * @param BundleFileWriterInterface $bundleFileWriter
      * @param IsTagMustBeIgnoredInterface $isTagMustBeIgnored
      * @param IsInternalUrlInterface $isInternalUrl
      * @param GetStringLengthFromUrlInterface $getStringLengthFromUrl
@@ -73,52 +56,34 @@ class MergeJs implements MergeJsInterface
      * @param GetStringFromHtmlInterface $getStringFromHtml
      * @param GetLocalPathFromUrlInterface $getLocalPathFromUrl
      * @param JsMerger $jsMerger
+     * @param JsList $jsListCache
      * @param MergeProcessorPoolInterface $mergeProcessorPool
      */
     public function __construct(
-        ConfigInterface $config,
-        CacheInterface $cache,
-        ResponseInterface $response,
-        RequestInterface $request,
-        RequireJsManager $requireJsManager,
-        JsFinderInterface $jsFinder,
-        ReplaceIntoHtmlInterface $replaceIntoHtml,
-        PutContentInFileInterface $putContentInFile,
-        IsTagMustBeIgnoredInterface $isTagMustBeIgnored,
-        IsInternalUrlInterface $isInternalUrl,
-        GetStringLengthFromUrlInterface $getStringLengthFromUrl,
-        GetFileContentByUrlInterface $getFileContentByUrl,
-        GetLastFileChangeTimestampForUrlList $getLastFileChangeTimestampForUrlList,
-        GetRequireJsBuildScriptUrlInterface $getRequireJsBuildScriptUrl,
-        GetStringFromHtmlInterface $getStringFromHtml,
-        GetLocalPathFromUrlInterface $getLocalPathFromUrl,
-        JsMerger $jsMerger,
-        JsList $jsListCache,
-        MergeProcessorPoolInterface $mergeProcessorPool
+        private readonly ConfigInterface $config,
+        private readonly CacheInterface $cache,
+        private readonly ResponseInterface $response,
+        private readonly RequestInterface $request,
+        private readonly RequireJsManager $requireJsManager,
+        private readonly JsFinderInterface $jsFinder,
+        private readonly ReplaceIntoHtmlInterface $replaceIntoHtml,
+        private readonly BundleFileWriterInterface $bundleFileWriter,
+        private readonly IsTagMustBeIgnoredInterface $isTagMustBeIgnored,
+        private readonly IsInternalUrlInterface $isInternalUrl,
+        private readonly GetStringLengthFromUrlInterface $getStringLengthFromUrl,
+        private readonly GetFileContentByUrlInterface $getFileContentByUrl,
+        private readonly GetLastFileChangeTimestampForUrlList $getLastFileChangeTimestampForUrlList,
+        private readonly GetRequireJsBuildScriptUrlInterface $getRequireJsBuildScriptUrl,
+        private readonly GetStringFromHtmlInterface $getStringFromHtml,
+        private readonly GetLocalPathFromUrlInterface $getLocalPathFromUrl,
+        private readonly JsMerger $jsMerger,
+        private readonly JsList $jsListCache,
+        private readonly MergeProcessorPoolInterface $mergeProcessorPool
     ) {
-        $this->config = $config;
-        $this->cache = $cache;
-        $this->response = $response;
-        $this->request = $request;
-        $this->requireJsManager = $requireJsManager;
-        $this->jsFinder = $jsFinder;
-        $this->replaceIntoHtml = $replaceIntoHtml;
-        $this->putContentInFile = $putContentInFile;
-        $this->isTagMustBeIgnored = $isTagMustBeIgnored;
-        $this->isInternalUrl = $isInternalUrl;
-        $this->getStringLengthFromUrl = $getStringLengthFromUrl;
-        $this->getFileContentByUrl = $getFileContentByUrl;
-        $this->getLastFileChangeTimestampForUrlList = $getLastFileChangeTimestampForUrlList;
-        $this->getRequireJsBuildScriptUrl = $getRequireJsBuildScriptUrl;
-        $this->getStringFromHtml = $getStringFromHtml;
-        $this->getLocalPathFromUrl = $getLocalPathFromUrl;
-        $this->jsMerger = $jsMerger;
-        $this->jsListCache = $jsListCache;
-        $this->mergeProcessorPool = $mergeProcessorPool;
     }
 
     /**
-     * @inheridoc
+     * @inheritDoc
      */
     public function inline(string &$html): void
     {
@@ -130,22 +95,21 @@ class MergeJs implements MergeJsInterface
 
         $replaceData = [];
         foreach ($tagList as $tag) {
-            $attributes = $tag->getAttributes();
-
-            if (isset($attributes[static::FLAG_IGNORE_MERGE])) {
+            if (isset($tag->getAttributes()[self::FLAG_IGNORE_MERGE])) {
                 continue;
             }
 
-            if (!$this->isInternalUrl->execute($attributes['src'])) {
+            $src = $this->getSrc($tag);
+            if ($src === null || !$this->isInternalUrl->execute($src)) {
                 continue;
             }
 
-            $contentLength = $this->getStringLengthFromUrl->execute($attributes['src']);
+            $contentLength = $this->getStringLengthFromUrl->execute($src);
             if ($contentLength > $this->config->getInlineMaxLength()) {
                 continue;
             }
 
-            $content = $this->getFileContentByUrl->execute($attributes['src']);
+            $content = $this->getFileContentByUrl->execute($src);
             if ($content === '' || strlen($content) > $this->config->getInlineMaxLength()) {
                 continue;
             }
@@ -168,7 +132,7 @@ class MergeJs implements MergeJsInterface
     }
 
     /**
-     * @inheridoc
+     * @inheritDoc
      */
     public function merge(string &$html): void
     {
@@ -177,17 +141,14 @@ class MergeJs implements MergeJsInterface
             ? $this->jsFinder->findAll($html)
             : $this->jsFinder->findExternal($html);
 
-        if (empty($tagList)) {
+        // Remove ignored tags from the list
+        $tagList = $this->excludeIgnoredTagsByAttribute($tagList);
+        if ($tagList === []) {
             return;
         }
 
-        // Remove ignored tags from the list
-        $this->excludeIgnoredTagsByAttribute($tagList);
-
-        $groupList = $this->groupTags($tagList, $html);
-
         $replaceData = [];
-        foreach ($groupList as $group) {
+        foreach ($this->groupTags($tagList, $html) as $group) {
             if (count($group) < 2) {
                 continue;
             }
@@ -200,16 +161,10 @@ class MergeJs implements MergeJsInterface
             // Process attributes using merge processor pool extension point
             $attributes = $this->mergeProcessorPool->processAttributes([], $mergedUrl);
 
-            if ($latestTime = $this->jsListCache->getCache()->load('last_update')) {
-                $mergedUrl .= '?time=' . $latestTime;
-            }
-
-            $firstTag = reset($group);
-            $lastTag = end($group);
             $replaceData[] = [
-                'start' => $firstTag->getStart(),
-                'end' => $lastTag->getEnd(),
-                'url' => $mergedUrl,
+                'start' => $group[0]->getStart(),
+                'end' => $group[count($group) - 1]->getEnd(),
+                'url' => $this->appendCacheTimestamp($mergedUrl),
                 'attributes' => $attributes
             ];
         }
@@ -221,7 +176,8 @@ class MergeJs implements MergeJsInterface
                 $attributesString .= ' ' . $name . '="' . htmlspecialchars($value) . '"';
             }
 
-            $replacement = '<script type="text/javascript" src="' . $replaceElData['url'] . '"' . $attributesString . '></script>';
+            $replacement = '<script type="text/javascript" src="' . $replaceElData['url'] . '"'
+                . $attributesString . '></script>';
             $html = $this->replaceIntoHtml->execute(
                 $html,
                 $replacement,
@@ -234,13 +190,13 @@ class MergeJs implements MergeJsInterface
     /**
      * Exclude ignored tags
      *
-     * @param \Hryvinskyi\PageSpeedApi\Api\Finder\Result\TagInterface[] $tagList
+     * @param TagInterface[] $tagList
      * @return void
      */
     private function excludeIgnoredTags(array &$tagList): void
     {
         foreach ($tagList as $key => $tag) {
-            if ($this->isTagMustBeIgnored->execute($tag->getContent(), [self::IGNORE_MERGE_FLAG], $this->config->getExcludeAnchors())) {
+            if ($this->isTagMustBeIgnored($tag)) {
                 unset($tagList[$key]);
             }
         }
@@ -249,43 +205,41 @@ class MergeJs implements MergeJsInterface
     /**
      * Exclude ignored tags by attribute
      *
-     * @param \Hryvinskyi\PageSpeedApi\Api\Finder\Result\TagInterface[] $tagList
-     * @return void
+     * @param TagInterface[] $tagList
+     * @return list<TagInterface> The tags without the ignore-merge attribute, in their order
      */
-    private function excludeIgnoredTagsByAttribute(array &$tagList): void
+    private function excludeIgnoredTagsByAttribute(array $tagList): array
     {
         $newTagList = [];
         foreach ($tagList as $tag) {
-            if (!array_key_exists(static::FLAG_IGNORE_MERGE, $tag->getAttributes())) {
+            if (!array_key_exists(self::FLAG_IGNORE_MERGE, $tag->getAttributes())) {
                 $newTagList[] = $tag;
             }
         }
-        $tagList = $newTagList;
+
+        return $newTagList;
     }
 
     /**
-     * Group tags
+     * Group consecutive tags that can be merged into one file
      *
-     * @param array $tagList Tag list
+     * @param non-empty-list<TagInterface> $tagList Tag list in document order
      * @param string $html HTML content
-     * @return array[]
+     * @return array<int, non-empty-list<TagInterface>> Groups keyed by the start offset of their first tag
      */
     private function groupTags(array $tagList, string $html): array
     {
-        $firstTag = reset($tagList);
-        $groupList = [$firstTag->getStart() => [$firstTag]];
+        $groupStart = $tagList[0]->getStart();
+        $groupList = [$groupStart => [$tagList[0]]];
 
         for ($i = 1, $iMax = count($tagList); $i < $iMax; $i++) {
-            $previousTag = $tagList[$i - 1];
             $currentTag = $tagList[$i];
-            $isNeedNewGroup = $this->isNewGroupNeeded($previousTag, $currentTag, $html);
-
-            if ($isNeedNewGroup) {
-                $groupList[$currentTag->getStart()] = array($currentTag);
-                next($groupList);
+            if ($this->isNewGroupNeeded($tagList[$i - 1], $currentTag, $html)) {
+                $groupStart = $currentTag->getStart();
+                $groupList[$groupStart] = [$currentTag];
                 continue;
             }
-            $groupList[key($groupList)][] = $currentTag;
+            $groupList[$groupStart][] = $currentTag;
         }
 
         return $groupList;
@@ -315,7 +269,7 @@ class MergeJs implements MergeJsInterface
             return true;
         }
 
-        if ($this->isTagMustBeIgnored($currentTag) || $this->isTagMustBeIgnored($currentTag)) {
+        if ($this->isTagMustBeIgnored($currentTag)) {
             return true;
         }
 
@@ -334,8 +288,10 @@ class MergeJs implements MergeJsInterface
      */
     private function isRequireJsConfigOrStaticFile(TagInterface $tag): bool
     {
-        $attributes = $tag->getAttributes();
-        return isset($attributes['src']) && preg_match('/(requirejs-config(\.min)?\.js|mage\/requirejs\/static(\.min)?\.js)$/', $attributes['src']) === 1;
+        $src = $this->getSrc($tag);
+
+        return $src !== null
+            && preg_match('/(requirejs-config(\.min)?\.js|mage\/requirejs\/static(\.min)?\.js)$/', $src) === 1;
     }
 
     /**
@@ -346,8 +302,9 @@ class MergeJs implements MergeJsInterface
      */
     private function isRequireJsOrStaticFile(TagInterface $tag): bool
     {
-        $attributes = $tag->getAttributes();
-        return isset($attributes['src']) && preg_match('/(requirejs\/require(\.min)?\.js)$/', $attributes['src']) === 1;
+        $src = $this->getSrc($tag);
+
+        return $src !== null && preg_match('/(requirejs\/require(\.min)?\.js)$/', $src) === 1;
     }
 
     /**
@@ -373,9 +330,23 @@ class MergeJs implements MergeJsInterface
      */
     private function isInternalFile(TagInterface $tag): bool
     {
-        $attributes = $tag->getAttributes();
-        return isset($attributes['src']) && $this->isInternalUrl->execute($attributes['src'])
-            && file_exists($this->getLocalPathFromUrl->execute($attributes['src']));
+        $src = $this->getSrc($tag);
+
+        return $src !== null && $this->isInternalUrl->execute($src)
+            && file_exists($this->getLocalPathFromUrl->execute($src));
+    }
+
+    /**
+     * The tag's "src" attribute
+     *
+     * @param TagInterface $tag Tag
+     * @return string|null The source URL, or null when the tag has none
+     */
+    private function getSrc(TagInterface $tag): ?string
+    {
+        $src = $tag->getAttributes()['src'] ?? null;
+
+        return is_string($src) ? $src : null;
     }
 
     /**
@@ -383,7 +354,7 @@ class MergeJs implements MergeJsInterface
      *
      * @param string $html HTML content to modify
      * @return void
-     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     * @throws NoSuchEntityException
      */
     private function insertRequireJsFiles(string &$html): void
     {
@@ -396,7 +367,9 @@ class MergeJs implements MergeJsInterface
 
         if (!$this->requireJsManager->isDataExists($requireJsKey)) {
             $this->processRequireJsStaticFiles($jsTagList, $html, $requireJsKey);
-            $this->response->setNoCacheHeaders();
+            if ($this->response instanceof HttpResponse) {
+                $this->response->setNoCacheHeaders();
+            }
             return;
         }
 
@@ -412,11 +385,10 @@ class MergeJs implements MergeJsInterface
      */
     private function findRequireJsKey(string $html): ?string
     {
-        $tagList = $this->jsFinder->findInline($html);
-        foreach ($tagList as $tag) {
-            $attributes = $tag->getAttributes();
-            if (isset($attributes[RequireJsManager::SCRIPT_TAG_DATA_KEY])) {
-                return $attributes[RequireJsManager::SCRIPT_TAG_DATA_KEY];
+        foreach ($this->jsFinder->findInline($html) as $tag) {
+            $key = $tag->getAttributes()[RequireJsManager::SCRIPT_TAG_DATA_KEY] ?? null;
+            if (is_string($key)) {
+                return $key;
             }
         }
 
@@ -430,6 +402,7 @@ class MergeJs implements MergeJsInterface
      * @param string $html HTML content to modify
      * @param string $requireJsKey RequireJS key
      * @return void
+     * @throws NoSuchEntityException
      */
     private function processRequireJsStaticFiles(array $jsTagList, string &$html, string $requireJsKey): void
     {
@@ -443,6 +416,7 @@ class MergeJs implements MergeJsInterface
      * @param string $html HTML content to modify
      * @param string $requireJsKey RequireJS key
      * @return void
+     * @throws NoSuchEntityException
      */
     private function processRequireJsMergedFiles(array $jsTagList, string &$html, string $requireJsKey): void
     {
@@ -459,8 +433,12 @@ class MergeJs implements MergeJsInterface
      * @return void
      * @throws NoSuchEntityException
      */
-    private function processRequireJsScriptsByType(array $jsTagList, string &$html, string $requireJsKey, bool $isStaticOnly): void
-    {
+    private function processRequireJsScriptsByType(
+        array $jsTagList,
+        string &$html,
+        string $requireJsKey,
+        bool $isStaticOnly
+    ): void {
         $requireJsTag = $this->findRequireJsTag($jsTagList);
         if ($requireJsTag === null) {
             return;
@@ -491,7 +469,7 @@ class MergeJs implements MergeJsInterface
     }
 
     /**
-     * Ensure RequireJS file exists and create it if necessary
+     * Ensure the bundle file of the stored list exists, writing it whole when it does not
      *
      * @param string $requireJsKey RequireJS key
      * @return void
@@ -499,13 +477,10 @@ class MergeJs implements MergeJsInterface
      */
     private function ensureRequireJsFileExists(string $requireJsKey): void
     {
-        $filePath = $this->getRequireJsResultFilePath($requireJsKey);
-        if (!file_exists($filePath)) {
-            $this->putContentInFile->execute(
-                $this->requireJsManager->getRequireJsContent($requireJsKey),
-                $filePath
-            );
-        }
+        $this->bundleFileWriter->writeIfAbsent(
+            $this->getRequireJsResultFilePath($requireJsKey),
+            fn (): string => $this->requireJsManager->getRequireJsContent($requireJsKey)
+        );
     }
 
     /**
@@ -519,17 +494,13 @@ class MergeJs implements MergeJsInterface
      */
     private function buildRequireJsScriptTag(TagInterface $requireJsTag, string $requireJsKey, bool $isStaticOnly): string
     {
-        $tagAttributes = $requireJsTag->getAttributes();
-        $originalContent = $requireJsTag->getContent();
-
         if ($isStaticOnly) {
-            $scriptUrl = $this->getRequireJsBuildScriptUrl->execute($tagAttributes['src']);
+            $scriptUrl = $this->getRequireJsBuildScriptUrl->execute((string)$this->getSrc($requireJsTag));
         } else {
-            $scriptUrl = $this->getRequireJsResultUrl($requireJsKey);
-            $scriptUrl = $this->appendCacheTimestamp($scriptUrl);
+            $scriptUrl = $this->appendCacheTimestamp($this->getRequireJsResultUrl($requireJsKey));
         }
 
-        return $originalContent . "\n" . $this->generateScriptTag($scriptUrl);
+        return $requireJsTag->getContent() . "\n" . $this->generateScriptTag($scriptUrl);
     }
 
     /**
@@ -541,7 +512,7 @@ class MergeJs implements MergeJsInterface
     private function appendCacheTimestamp(string $url): string
     {
         $latestTime = $this->jsListCache->getCache()->load('last_update');
-        if ($latestTime) {
+        if ((is_int($latestTime) || is_string($latestTime)) && (bool)$latestTime) {
             $url .= '?time=' . $latestTime;
         }
 
@@ -578,40 +549,65 @@ class MergeJs implements MergeJsInterface
     }
 
     /**
-     * @param string $key
-     *
-     * @return string
-     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     * @inheritDoc
      */
     public function getRequireJsResultFilePath(string $key): string
     {
-        $fileDir = $this->cache->getRootCachePath() . DIRECTORY_SEPARATOR . RequireJsManager::REQUIREJS_STORAGE_DIR . DIRECTORY_SEPARATOR;
+        $fileDir = $this->cache->getRootCachePath() . DIRECTORY_SEPARATOR
+            . RequireJsManager::REQUIREJS_STORAGE_DIR . DIRECTORY_SEPARATOR;
+
         return $fileDir . $this->getRequireJsResultFileName($key);
     }
 
     /**
-     * @param string $key
+     * Public URL of the bundle file for the URL list stored under the route key
      *
+     * @param string $key Route key
      * @return string
-     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     * @throws NoSuchEntityException
      */
     public function getRequireJsResultUrl(string $key): string
     {
-        return $this->cache->getRootCacheUrl($this->request->isSecure())
-            . DIRECTORY_SEPARATOR . RequireJsManager::REQUIREJS_STORAGE_DIR . DIRECTORY_SEPARATOR . $this->getRequireJsResultFileName($key);
+        return $this->getRootCacheUrl($this->request->isSecure())
+            . DIRECTORY_SEPARATOR . RequireJsManager::REQUIREJS_STORAGE_DIR
+            . DIRECTORY_SEPARATOR . $this->getRequireJsResultFileName($key);
     }
 
     /**
-     * @param string $key
+     * Public URL of the page speed cache root
      *
+     * @param bool $isSecure Whether the secure URL is wanted
      * @return string
-     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     * @throws NoSuchEntityException
+     */
+    private function getRootCacheUrl(bool $isSecure): string
+    {
+        if (!$this->cache instanceof PageSpeedCache) {
+            throw new \LogicException('The page speed cache in use does not publish a root URL.');
+        }
+
+        return $this->cache->getRootCacheUrl($isSecure);
+    }
+
+    /**
+     * File name of the bundle for the URL list stored under the route key
+     *
+     * @param string $key Route key
+     * @return string
+     * @throws NoSuchEntityException
      */
     private function getRequireJsResultFileName(string $key): string
     {
-        $urlList = $this->requireJsManager->loadUrlList($key) ?? [];
+        $urlList = [];
+        foreach ($this->requireJsManager->loadUrlList($key) as $url) {
+            if (is_string($url)) {
+                $urlList[] = $url;
+            }
+        }
         sort($urlList);
         $name = md5(implode(',', $urlList));
-        return md5($key . '||' . $name . '||' . $this->getLastFileChangeTimestampForUrlList->execute($urlList)) . '.js';
+
+        return md5($key . '||' . $name . '||' . $this->getLastFileChangeTimestampForUrlList->execute($urlList))
+            . '.js';
     }
 }

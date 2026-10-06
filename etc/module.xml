@@ -8,6 +8,10 @@
         xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
     <module name="Hryvinskyi_PageSpeedJsMergeFrontendUi">
         <sequence>
+            <module name="Magento_Store"/>
+            <module name="Magento_Theme"/>
+            <module name="Hryvinskyi_PageSpeedApi"/>
+            <module name="Hryvinskyi_PageSpeed"/>
             <module name="Hryvinskyi_PageSpeedJsMerge"/>
         </sequence>
     </module>
